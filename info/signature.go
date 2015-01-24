@@ -1,5 +1,5 @@
 package info
 
-func (i *Info) decryptSignatures() error {
-    return nil
+func (i *Info) DecryptSignatures() error {
+	return nil
 }
