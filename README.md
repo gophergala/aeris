@@ -15,7 +15,7 @@ Download a video with id `oiKj0Z_Xnjc`:
 $ aeris get oiKj0Z_Xnjc
 ```
 aeris will automatically download the best quality (in this case `itag=22,
-  container=MP4, resolution=720p`) and write the contents to `oiKj0Z_Xnjc.mp4`.
+container=MP4, resolution=720p`) and write the contents to `oiKj0Z_Xnjc.mp4`.
 
 However we can also manually pick a source and pass in a filename under which we
 want to save the video. We can retrieve a list of available streams with the
@@ -33,8 +33,8 @@ It'll output a list similar to this:
 [17] 3GP - 144p
 ```
 If, for example, we want to download the video in `360p` resolution, contained
-in `mp4`, we would pass in the itag (`18`) of the
-source stream, and to save the video under `video.mp4` we append the filename:
+in `mp4`, we would pass in the itag (`18`) of the source stream, and to save
+the video under `video.mp4` we append the filename:
 ```
 $ aeris -itag=18 get oiKj0Z_Xnjc video.mp4
 

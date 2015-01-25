@@ -5,7 +5,6 @@ import (
 	"regexp"
 	"io/ioutil"
 	"errors"
-	"fmt"
 	"strings"
 	"strconv"
 )
@@ -22,10 +21,6 @@ func (i *Info) DecryptSignatures() error {
 	}
 	body, err := ioutil.ReadAll(res.Body)
 	res.Body.Close()
-
-	fmt.Println(string(body[:60]))
-
-	fmt.Println(i.streams[0].Url)
 
 	// body contains javascript code containing decryption info, we're about to parse those
 	// and use them to decrypt signatures
@@ -56,26 +51,17 @@ func extractDecryption(js []byte) (chain, error) {
 		return nil, err
 	}
 
-	fmt.Println(actionString)
-	fmt.Println(object)
-
 	methodMapping, err := extractMethodMapping(object, js)
 	if err != nil {
 		return nil, err
 	}
 
-	fmt.Println("extracted", len(methodMapping), "method mappings")
-
 	actionCalls := strings.Split(actionString, ";")
-
-	fmt.Println("expecting", len(actionCalls), "actions in decryption chain")
 
 	decryption, err := buildDecryptionChain(methodMapping, actionCalls)
 	if err != nil {
 		return decryption, err
 	}
-
-	fmt.Println("chain length =", len(decryption))
 
 	return decryption, nil
 }
@@ -111,8 +97,6 @@ func buildDecryptionChain(methods map[string]method, jsCalls []string) (chain, e
 
 		name := match[1]
 		param, _ := strconv.Atoi(match[2])
-
-		fmt.Println(name, param)
 
 		actions = append(actions, &action{
 			method: methods[name],
@@ -169,8 +153,6 @@ func extractMethodMapping(object string, js []byte) (map[string]method, error) {
 
 	definitions := string(match[1])
 
-	fmt.Println(definitions)
-
 	methods := make(map[string]method)
 
 	for regex, handler := range methodsRegexToHandler {
@@ -180,8 +162,6 @@ func extractMethodMapping(object string, js []byte) (map[string]method, error) {
 			definition := definitions[match[0]:match[1]]
 
 			name := definitions[match[0]:match[0]+2]
-
-			fmt.Println("def " + name + " = " + definition)
 
 			methods[name] = method{
 				name: name,
