@@ -1,7 +1,9 @@
 package info
 
 import (
-	"io/ioutil"
+	"bytes"
+	"errors"
+	"encoding/json"
 	"net/http"
 	"net/url"
 	"strings"
@@ -9,44 +11,65 @@ import (
 	"github.com/gophergala/aeris/format"
 )
 
-const API_INFO_URL = "http://www.youtube.com/get_video_info?hl=en_US&el=detailpage&video_id="
-
 type Info struct {
-	Id      string
-	Streams []*Stream
+	Id						string
+	streams					[]*Stream
+	playerJsUrl				string
+	decryptedSignatures		bool
 }
 
 type Stream struct {
-	Url       string
-	signature string
-	Format    *format.YoutubeFormat
+	Url			string
+	signature	string
+	Format		*format.YoutubeFormat
 }
+
+const WATCH_PAGE_URL = "http://www.youtube.com/watch?v="
 
 func NewInfo(id string) *Info {
 	return &Info{
 		Id: id,
+		decryptedSignatures: false,
 	}
 }
 
-func (i *Info) Fetch() error {
-	res, err := http.Get(API_INFO_URL + i.Id)
-	if err != nil {
-		return err
-	}
-	defer res.Body.Close()
+func (i *Info) Streams() []*Stream {
+	return i.streams
+}
 
-	body, err := ioutil.ReadAll(res.Body)
+func (i *Info) Fetch() error {
+
+	res, err := http.Get(WATCH_PAGE_URL + i.Id)
 	if err != nil {
 		return err
 	}
+
+	buf := new(bytes.Buffer)
+	buf.ReadFrom(res.Body)
 	res.Body.Close()
 
-	rawInfo, err := url.ParseQuery(string(body))
+	match := configRegex.FindSubmatch(buf.Bytes())
+	if match == nil {
+		return errors.New("Could not match yt player config in player page")
+	}
+
+	var config = struct{
+		Args struct{
+			UrlEncodedFmtStreamMap string `json:"url_encoded_fmt_stream_map"`
+		}
+		Assets struct{
+			Js string
+		}
+	}{}
+
+	err = json.Unmarshal(match[1], &config)
 	if err != nil {
 		return err
 	}
 
-	err = i.parseStreams(rawInfo.Get("url_encoded_fmt_stream_map"))
+	i.playerJsUrl = "http:" + config.Assets.Js
+
+	err = i.parseStreams(config.Args.UrlEncodedFmtStreamMap)
 	if err != nil {
 		return err
 	}
@@ -55,7 +78,8 @@ func (i *Info) Fetch() error {
 }
 
 func (i *Info) parseStreams(streams string) error {
-	i.Streams = nil
+	i.streams = nil
+	i.decryptedSignatures = false
 
 	formats := format.YoutubeFormats()
 
@@ -81,7 +105,7 @@ func (i *Info) parseStreams(streams string) error {
 				}
 			}
 
-			i.Streams = append(i.Streams, stream)
+			i.streams = append(i.streams, stream)
 		}
 	}
 

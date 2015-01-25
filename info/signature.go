@@ -1,11 +1,9 @@
 package info
 
 import (
-	"encoding/json"
 	"net/http"
 	"regexp"
 	"io/ioutil"
-	"bytes"
 	"errors"
 	"fmt"
 	"strings"
@@ -14,63 +12,22 @@ import (
 
 var configRegex = regexp.MustCompile(`ytplayer\.config = (.*);ytplayer\.load`)
 
-var actionsExtractRegex = regexp.MustCompile(`(?i)[a-z]=[a-z]\.split\(""\);((?:([a-z]{2})\.[a-z0-9]{2}\([a-z],[0-9]+\);)+)return [a-z]\.join\(""\)`)
-
-
-const WATCH_PAGE_URL = "http://www.youtube.com/watch?v="
-
-
 func (i *Info) DecryptSignatures() error {
 
-	res, err := http.Get(WATCH_PAGE_URL + i.Id)
-	if err != nil {
-		return err
+	if (i.decryptedSignatures) {
+		return nil
 	}
 
-	buf := new(bytes.Buffer)
-	buf.ReadFrom(res.Body)
-	res.Body.Close()
-
-	match := configRegex.FindSubmatch(buf.Bytes())
-	if match == nil {
-		return errors.New("Could not match yt player config in player page")
-	}
-
-	var config = struct{
-		Args struct{
-			UrlEncodedFmtStreamMap string `json:"url_encoded_fmt_stream_map"`
-		}
-		Assets struct{
-			Js string
-		}
-	}{}
-
-	err = json.Unmarshal(match[1], &config)
-	if err != nil {
-		return err
-	}
-
-	fmt.Println("http:" + config.Assets.Js)
-
-	res, err = http.Get("http:" + config.Assets.Js)
+	res, err := http.Get(i.playerJsUrl)
 	if err != nil {
 		return err
 	}
 	body, err := ioutil.ReadAll(res.Body)
 	res.Body.Close()
 
-	// TODO: should update info with new stream information to ensure we apply the decryption
-	// to the correct set of stream urls (currently not possible, as parseStream nils
-	// the []*Stream slice which makes the pointer we have in the download.Download func point
-	// to a Stream outside our slice, and therefore doesn't get the updated signature applied)
-	// err = i.parseStreams(config.Args.UrlEncodedFmtStreamMap)
-	// if err != nil {
-	// 	return err
-	// }
-
 	fmt.Println(string(body[:60]))
 
-	fmt.Println(i.Streams[0].Url)
+	fmt.Println(i.streams[0].Url)
 
 	// body contains javascript code containing decryption info, we're about to parse those
 	// and use them to decrypt signatures
@@ -79,7 +36,7 @@ func (i *Info) DecryptSignatures() error {
 		return err
 	}
 
-	for _, stream := range i.Streams {
+	for _, stream := range i.streams {
 
 		stream.signature = decryption.run(stream.signature)
 
@@ -88,6 +45,8 @@ func (i *Info) DecryptSignatures() error {
 			return err
 		}
 	}
+
+	i.decryptedSignatures = true
 
 	return nil
 }
@@ -123,8 +82,6 @@ func extractDecryption(js []byte) (chain, error) {
 	return decryption, nil
 }
 
-var methodCallInfoRegex = regexp.MustCompile(`(?i)[a-z0-9]{2}\.([a-z0-9]{2})\([a-z],([0-9]+)\)`)
-
 type action struct {
 	method		method
 	param		int
@@ -141,6 +98,7 @@ func (c *chain) run(sig string) string {
 	return sig
 }
 
+var methodCallInfoRegex = regexp.MustCompile(`(?i)[a-z0-9]{2}\.([a-z0-9]{2})\([a-z],([0-9]+)\)`)
 
 func buildDecryptionChain(methods map[string]method, jsCalls []string) (chain, error) {
 
@@ -167,6 +125,12 @@ func buildDecryptionChain(methods map[string]method, jsCalls []string) (chain, e
 	return actions, nil
 }
 
+var methodsRegex = map[string]string {
+	"reverse": `([a-z0-9]{2}):function\([a-z]\)\{[a-z]\.reverse\(\)\}`,
+	"swap": `([a-z0-9]{2}):function\([a-z],[a-z]\)\{var [a-z]=[a-z]\[[0-9]\];[a-z]\[[0-9]\]=[a-z]\[[a-z]%[a-z]\.length\];[a-z]\[[a-z]\]=[a-z]\}`,
+	"splice": `([a-z0-9]{2}):function\([a-z],[a-z]\)\{[a-z]\.splice\([0-9],[a-z]\)\}`,
+}
+
 func objectMethodExtractRegex(objectName string) (*regexp.Regexp, error) {
 
 	var methodArray []string
@@ -183,6 +147,14 @@ type method struct {
 	name		string
 	definition	string
 	handler		handler
+}
+
+type handler func(in string, param int) string
+
+var methodsRegexToHandler = map[*regexp.Regexp]handler {
+	regexp.MustCompile(`(?i)` + methodsRegex["reverse"]): reverseHandler,
+	regexp.MustCompile(`(?i)` + methodsRegex["swap"]): swapHandler,
+	regexp.MustCompile(`(?i)` + methodsRegex["splice"]): spliceHandler,
 }
 
 func extractMethodMapping(object string, js []byte) (map[string]method, error) {
@@ -224,20 +196,7 @@ func extractMethodMapping(object string, js []byte) (map[string]method, error) {
 	return methods, nil
 }
 
-// run with i modifier!
-var methodsRegex = map[string]string {
-	"reverse": `([a-z0-9]{2}):function\([a-z]\)\{[a-z]\.reverse\(\)\}`,
-	"swap": `([a-z0-9]{2}):function\([a-z],[a-z]\)\{var [a-z]=[a-z]\[[0-9]\];[a-z]\[[0-9]\]=[a-z]\[[a-z]%[a-z]\.length\];[a-z]\[[a-z]\]=[a-z]\}`,
-	"splice": `([a-z0-9]{2}):function\([a-z],[a-z]\)\{[a-z]\.splice\([0-9],[a-z]\)\}`,
-}
-
-type handler func(in string, param int) string
-
-var methodsRegexToHandler = map[*regexp.Regexp]handler {
-	regexp.MustCompile(`(?i)` + methodsRegex["reverse"]): reverseHandler,
-	regexp.MustCompile(`(?i)` + methodsRegex["swap"]): swapHandler,
-	regexp.MustCompile(`(?i)` + methodsRegex["splice"]): spliceHandler,
-}
+var actionsExtractRegex = regexp.MustCompile(`(?i)[a-z]=[a-z]\.split\(""\);((?:([a-z]{2})\.[a-z0-9]{2}\([a-z],[0-9]+\);)+)return [a-z]\.join\(""\)`)
 
 func extractMethodCalls(js []byte) (string, string, error) {
 	match := actionsExtractRegex.FindSubmatch(js)

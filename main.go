@@ -28,7 +28,7 @@ func downloadVideo(id string) error {
 		return err
 	}
 
-	stream := videoInfo.Streams[0]
+	stream := videoInfo.Streams()[0]
 	extension, err := stream.Format.Extension()
 	if err != nil {
 		return err
@@ -52,7 +52,7 @@ func main() {
 
 	flag.Parse()
 
-	id := strings.Trim(flag.Arg(0), "\\")
+	id := strings.TrimLeft(flag.Arg(0), "\\")
 
 	downloadVideo(id)
 
