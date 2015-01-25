@@ -10,8 +10,6 @@ import (
 	"strconv"
 )
 
-var configRegex = regexp.MustCompile(`ytplayer\.config = (.*);ytplayer\.load`)
-
 func (i *Info) DecryptSignatures() error {
 
 	if (i.decryptedSignatures) {

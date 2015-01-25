@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"regexp"
 
 	"github.com/gophergala/aeris/format"
 )
@@ -25,6 +26,8 @@ type Stream struct {
 }
 
 const WATCH_PAGE_URL = "http://www.youtube.com/watch?v="
+
+var configRegex = regexp.MustCompile(`ytplayer\.config = (.*);ytplayer\.load`)
 
 func NewInfo(id string) *Info {
 	return &Info{
