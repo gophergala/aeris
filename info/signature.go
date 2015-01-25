@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"strconv"
 )
 
 var configRegex = regexp.MustCompile(`ytplayer\.config = (.*);ytplayer\.load`)
@@ -58,12 +59,14 @@ func (i *Info) DecryptSignatures() error {
 	body, err := ioutil.ReadAll(res.Body)
 	res.Body.Close()
 
-	// update info with new stream information to ensure we apply the decryption
-	// to the correct set of stream urls
-	err = i.parseStreams(config.Args.UrlEncodedFmtStreamMap)
-	if err != nil {
-		return err
-	}
+	// TODO: should update info with new stream information to ensure we apply the decryption
+	// to the correct set of stream urls (currently not possible, as parseStream nils
+	// the []*Stream slice which makes the pointer we have in the download.Download func point
+	// to a Stream outside our slice, and therefore doesn't get the updated signature applied)
+	// err = i.parseStreams(config.Args.UrlEncodedFmtStreamMap)
+	// if err != nil {
+	// 	return err
+	// }
 
 	fmt.Println(string(body[:60]))
 
@@ -71,19 +74,29 @@ func (i *Info) DecryptSignatures() error {
 
 	// body contains javascript code containing decryption info, we're about to parse those
 	// and use them to decrypt signatures
-	err = extractDecryption(body)
+	decryption, err := extractDecryption(body)
 	if err != nil {
 		return err
+	}
+
+	for _, stream := range i.Streams {
+
+		stream.signature = decryption.run(stream.signature)
+
+		err = stream.buildSignatureUrl(stream.signature)
+		if err != nil {
+			return err
+		}
 	}
 
 	return nil
 }
 
-func extractDecryption(js []byte) error {
+func extractDecryption(js []byte) (chain, error) {
 
 	actionString, object, err := extractMethodCalls(js)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	fmt.Println(actionString)
@@ -91,16 +104,67 @@ func extractDecryption(js []byte) error {
 
 	methodMapping, err := extractMethodMapping(object, js)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	fmt.Println("extracted", len(methodMapping), "method mappings")
 
-	for name, method := range methodMapping {
-		fmt.Println(method.name, name, method.definition, method.handler("", -1))
+	actionCalls := strings.Split(actionString, ";")
+
+	fmt.Println("expecting", len(actionCalls), "actions in decryption chain")
+
+	decryption, err := buildDecryptionChain(methodMapping, actionCalls)
+	if err != nil {
+		return decryption, err
 	}
 
-	return nil
+	fmt.Println("chain length =", len(decryption))
+
+	return decryption, nil
+}
+
+var methodCallInfoRegex = regexp.MustCompile(`(?i)[a-z0-9]{2}\.([a-z0-9]{2})\([a-z],([0-9]+)\)`)
+
+type action struct {
+	method		method
+	param		int
+}
+
+type chain []*action
+
+func (c *chain) run(sig string) string {
+
+	for _, action := range *c {
+		sig = action.method.handler(sig, action.param)
+	}
+
+	return sig
+}
+
+
+func buildDecryptionChain(methods map[string]method, jsCalls []string) (chain, error) {
+
+	var actions chain
+
+	for _, call := range jsCalls {
+
+		match := methodCallInfoRegex.FindStringSubmatch(call)
+		if match == nil {
+			return nil, errors.New("Could not match info extraction regex against method call")
+		}
+
+		name := match[1]
+		param, _ := strconv.Atoi(match[2])
+
+		fmt.Println(name, param)
+
+		actions = append(actions, &action{
+			method: methods[name],
+			param: param,
+		})
+	}
+
+	return actions, nil
 }
 
 func objectMethodExtractRegex(objectName string) (*regexp.Regexp, error) {
@@ -189,14 +253,31 @@ func extractMethodCalls(js []byte) (string, string, error) {
 	return actionString, object, nil
 }
 
-func reverseHandler(in string, param int) string {
-	return "REVERSE"
+func reverseHandler(sig string, _ int) string {
+
+	runes := []rune(sig)
+
+	for i, j := 0, len(runes)-1; i < j; i, j = i+1, j-1 {
+		runes[i], runes[j] = runes[j], runes[i]
+	}
+
+	return string(runes)
 }
 
-func swapHandler(in string, param int) string {
-	return "SWAP"
+func swapHandler(sig string, pos int) string {
+	runes := []rune(sig)
+
+	temp := runes[0]
+
+	runes[0] = runes[pos % len(runes)]
+
+	runes[pos] = temp
+
+	return string(runes)
 }
 
-func spliceHandler(in string, param int) string {
-	return "SPLICE"
+func spliceHandler(sig string, pos int) string {
+	runes := []rune(sig)
+	runes = runes[pos:]
+	return string(runes)
 }
