@@ -8,6 +8,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"strings"
 )
 
 var configRegex = regexp.MustCompile(`ytplayer\.config = (.*);ytplayer\.load`)
@@ -68,26 +69,134 @@ func (i *Info) DecryptSignatures() error {
 
 	fmt.Println(i.Streams[0].Url)
 
-	extractActions(body)
-
 	// body contains javascript code containing decryption info, we're about to parse those
 	// and use them to decrypt signatures
+	err = extractDecryption(body)
+	if err != nil {
+		return err
+	}
 
 	return nil
 }
 
-func extractActions(js []byte) error {
+func extractDecryption(js []byte) error {
+
+	actionString, object, err := extractMethodCalls(js)
+	if err != nil {
+		return err
+	}
+
+	fmt.Println(actionString)
+	fmt.Println(object)
+
+	methodMapping, err := extractMethodMapping(object, js)
+	if err != nil {
+		return err
+	}
+
+	fmt.Println("extracted", len(methodMapping), "method mappings")
+
+	for name, method := range methodMapping {
+		fmt.Println(method.name, name, method.definition, method.handler("", -1))
+	}
+
+	return nil
+}
+
+func objectMethodExtractRegex(objectName string) (*regexp.Regexp, error) {
+
+	var methodArray []string
+	for _, regexStr := range methodsRegex {
+		methodArray = append(methodArray, regexStr)
+	}
+
+	regex, err := regexp.Compile(`(?i)var ` + objectName + `=\{((?:(?:` + strings.Join(methodArray, "|") + `)(?:,|\})?)+)`)
+
+	return regex, err
+}
+
+type method struct {
+	name		string
+	definition	string
+	handler		handler
+}
+
+func extractMethodMapping(object string, js []byte) (map[string]method, error) {
+
+	regex, err := objectMethodExtractRegex(object)
+	if err != nil {
+		return nil, err
+	}
+
+	match := regex.FindSubmatch(js)
+	if match == nil {
+		return nil, errors.New("Couldn't match object method extraction regex against js body")
+	}
+
+	definitions := string(match[1])
+
+	fmt.Println(definitions)
+
+	methods := make(map[string]method)
+
+	for regex, handler := range methodsRegexToHandler {
+		match := regex.FindStringSubmatchIndex(definitions)
+		if match != nil {
+
+			definition := definitions[match[0]:match[1]]
+
+			name := definitions[match[0]:match[0]+2]
+
+			fmt.Println("def " + name + " = " + definition)
+
+			methods[name] = method{
+				name: name,
+				definition: definition,
+				handler: handler,
+			}
+		}
+	}
+
+	return methods, nil
+}
+
+// run with i modifier!
+var methodsRegex = map[string]string {
+	"reverse": `([a-z0-9]{2}):function\([a-z]\)\{[a-z]\.reverse\(\)\}`,
+	"swap": `([a-z0-9]{2}):function\([a-z],[a-z]\)\{var [a-z]=[a-z]\[[0-9]\];[a-z]\[[0-9]\]=[a-z]\[[a-z]%[a-z]\.length\];[a-z]\[[a-z]\]=[a-z]\}`,
+	"splice": `([a-z0-9]{2}):function\([a-z],[a-z]\)\{[a-z]\.splice\([0-9],[a-z]\)\}`,
+}
+
+type handler func(in string, param int) string
+
+var methodsRegexToHandler = map[*regexp.Regexp]handler {
+	regexp.MustCompile(`(?i)` + methodsRegex["reverse"]): reverseHandler,
+	regexp.MustCompile(`(?i)` + methodsRegex["swap"]): swapHandler,
+	regexp.MustCompile(`(?i)` + methodsRegex["splice"]): spliceHandler,
+}
+
+func extractMethodCalls(js []byte) (string, string, error) {
 	match := actionsExtractRegex.FindSubmatch(js)
 	if match == nil {
-		return errors.New("Could not match action extraction regex against js body")
+		return "", "", errors.New("Could not match action extraction regex against js body")
 	}
 
 	actionString := string(match[1])
 	object := string(match[2])
 
-	fmt.Println("EXTRACT ACTIONS")
-	fmt.Println(actionString)
-	fmt.Println(object)
+	actionString = strings.Trim(actionString, ";")
 
-	return nil
+	return actionString, object, nil
+}
+
+func reverseHandler(in string, param int) string {
+	return "REVERSE"
+}
+
+func swapHandler(in string, param int) string {
+	return "SWAP"
+}
+
+func spliceHandler(in string, param int) string {
+	return "SPLICE"
 }
