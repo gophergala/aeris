@@ -1,10 +1,8 @@
 package download
 
 import (
-	"fmt"
 	"io"
 	"net/http"
-	"strconv"
 
 	"github.com/gophergala/aeris/info"
 )
@@ -32,9 +30,7 @@ func Download(i *info.Info, stream *info.Stream, output io.Writer) error {
 		defer res.Body.Close()
 	}
 
-	n, err := io.Copy(output, res.Body)
-
-	fmt.Println("download size (body): " + strconv.FormatInt(n, 10))
+	_, err = io.Copy(output, res.Body)
 
 	return err
 }

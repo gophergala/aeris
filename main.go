@@ -4,7 +4,6 @@ import (
 	"flag"
 	"os"
 	"fmt"
-	"strings"
 	"io"
 
 	"github.com/gophergala/aeris/download"
@@ -17,7 +16,10 @@ var (
 
 func main() {
 
-	flag.IntVar(&inputItag, "i:i", -1, "itag of the stream to download")
+	flag.IntVar(&inputItag, "itag", -1, "itag of the stream to download")
+	flag.Usage = func() {
+		printUsage()
+	}
 	flag.Parse()
 
 	if flag.NArg() == 0 {
@@ -29,7 +31,6 @@ func main() {
 
 	switch cmd {
 
-		// 0: get
 		case "get":
 
 			if flag.NArg() < 2 {
@@ -37,9 +38,11 @@ func main() {
 				os.Exit(1)
 			}
 
-			id := strings.TrimLeft(flag.Arg(0), "\\")
+			id := flag.Arg(1)
 
-			i, err := fetchInfo(id)
+			i := info.NewInfo(id)
+
+			err := i.Fetch()
 			if err != nil {
 				fmt.Println("there was an error fetching info for the video", id)
 				os.Exit(1)
@@ -57,7 +60,9 @@ func main() {
 					}
 				}
 
-				fmt.Println("this video doesn't have itag", inputItag, ". picking default stream (the best one available).")
+				if downloadStream == nil {
+					fmt.Printf("%s doesn't have a stream with format with itag %d. Picking default stream (the best one available).\n", id, inputItag)
+				}
 			}
 
 			// pick the best stream by default
@@ -65,21 +70,22 @@ func main() {
 				downloadStream = i.Streams()[0]
 			}
 
-			var output io.Writer
-			if flag.NArg() > 1 {
+			var output io.WriteCloser
+			if flag.NArg() > 2 {
 
-				if flag.Arg(1) == "-" {
+				if flag.Arg(2) == "-" {
 
 					output = os.Stdout
 
 				} else {
 
-					output, err := os.Create(flag.Arg(1))
+					fmt.Println("writing download result to:", flag.Arg(2))
+
+					output, err = os.Create(flag.Arg(2))
 					if err != nil {
 						fmt.Println("failed to create file")
 						os.Exit(1)
 					}
-					defer output.Close()
 				}
 
 			} else {
@@ -90,19 +96,30 @@ func main() {
 					ext = ""
 				}
 
-				output, err := os.Create(i.Id + ext)
+				fmt.Println("writing download result to:", i.Id + ext)
+
+				output, err = os.Create(i.Id + ext)
 				if err != nil {
 					fmt.Println("failed to create file")
 					os.Exit(1)
 				}
-				defer output.Close()
 
 			}
 
 			download.Download(i, downloadStream, output)
 
+			output.Close()
+
 		case "info":
-			showVideoInfo()
+
+			if flag.NArg() < 2 {
+				printUsageCommand("info")
+				os.Exit(1)
+			}
+
+			id := flag.Arg(1)
+
+			showVideoInfo(id)
 
 		case "help":
 
@@ -119,46 +136,23 @@ func main() {
 
 }
 
-func downloadVideo(id string) error {
+func showVideoInfo(id string) {
 
-	videoInfo, err := fetchInfo(id)
+	i := info.NewInfo(id)
+
+	fmt.Println("fetching video info")
+
+	err := i.Fetch()
 	if err != nil {
-		return err
+		fmt.Println("there was an error while fetching info for", id)
 	}
 
-	stream := videoInfo.Streams()[0]
-	extension, err := stream.Format.Extension()
-	if err != nil {
-		return err
-	}
+	fmt.Println("available itags:")
+	fmt.Println("")
 
-	fd, err := os.Create(videoInfo.Id + extension)
-	if err != nil {
-		return err
-	}
-	defer fd.Close()
-
-	err = download.Download(videoInfo, stream, fd)
-	if err != nil {
-		return err
-	}
-
-	return nil
-}
-
-func fetchInfo(id string) (*info.Info, error) {
-
-	videoInfo := info.NewInfo(id)
-
-	err := videoInfo.Fetch()
-	if err != nil {
-		return nil, err
-	}
-
-	return videoInfo, err
-}
-
-func showVideoInfo() {
+	for _, stream := range i.Streams() {
+		fmt.Printf("    [%d] %s - %s\n", stream.Format.Itag, stream.Format.Container, stream.Format.Video.Resolution)
+	} 
 
 }
 
@@ -180,7 +174,8 @@ func printUsage() {
 	printSubHeader()
 
 	fmt.Println("Usage:")
-	fmt.Println("    aeris <command> [arguments...]")
+	fmt.Println("")
+	fmt.Println("    aeris [flags] <command> [arguments...]")
 	fmt.Println("")
 	fmt.Println("A List of possible commands:")
 	fmt.Println("")
@@ -200,19 +195,22 @@ func printUsageCommand(cmd string) {
 	printSubHeader()
 
 	fmt.Println("Usage:")
+	fmt.Println("")
 
 	switch cmd {
 		case "get":
-			fmt.Println("    get <video-id>")
+			fmt.Println("    aeris get [flags] <video-id> [target]")
 			fmt.Println("")
-			fmt.Println("Available flags:")
-			fmt.Println("    -i:i        itag identifying a YouTube stream to download")
+			fmt.Println("    -itag        itag identifying a YouTube stream to download")
 
 		case "info":
+			fmt.Println("    aeris info <video-id>")
 
 		case "help":
-			fmt.Println("")
 			fmt.Println("    woah! help-ception!")
+
+		default:
+			fmt.Println("command", cmd, "doesn't exist")
 	}
 
 }
