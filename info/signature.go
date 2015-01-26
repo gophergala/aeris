@@ -1,17 +1,17 @@
 package info
 
 import (
+	"errors"
+	"io/ioutil"
 	"net/http"
 	"regexp"
-	"io/ioutil"
-	"errors"
-	"strings"
 	"strconv"
+	"strings"
 )
 
 func (i *Info) DecryptSignatures() error {
 
-	if (i.decryptedSignatures) {
+	if i.decryptedSignatures {
 		return nil
 	}
 
@@ -67,8 +67,8 @@ func extractDecryption(js []byte) (chain, error) {
 }
 
 type action struct {
-	method		method
-	param		int
+	method method
+	param  int
 }
 
 type chain []*action
@@ -100,17 +100,17 @@ func buildDecryptionChain(methods map[string]method, jsCalls []string) (chain, e
 
 		actions = append(actions, &action{
 			method: methods[name],
-			param: param,
+			param:  param,
 		})
 	}
 
 	return actions, nil
 }
 
-var methodsRegex = map[string]string {
+var methodsRegex = map[string]string{
 	"reverse": `([a-z0-9]{2}):function\([a-z]\)\{[a-z]\.reverse\(\)\}`,
-	"swap": `([a-z0-9]{2}):function\([a-z],[a-z]\)\{var [a-z]=[a-z]\[[0-9]\];[a-z]\[[0-9]\]=[a-z]\[[a-z]%[a-z]\.length\];[a-z]\[[a-z]\]=[a-z]\}`,
-	"splice": `([a-z0-9]{2}):function\([a-z],[a-z]\)\{[a-z]\.splice\([0-9],[a-z]\)\}`,
+	"swap":    `([a-z0-9]{2}):function\([a-z],[a-z]\)\{var [a-z]=[a-z]\[[0-9]\];[a-z]\[[0-9]\]=[a-z]\[[a-z]%[a-z]\.length\];[a-z]\[[a-z]\]=[a-z]\}`,
+	"splice":  `([a-z0-9]{2}):function\([a-z],[a-z]\)\{[a-z]\.splice\([0-9],[a-z]\)\}`,
 }
 
 func objectMethodExtractRegex(objectName string) (*regexp.Regexp, error) {
@@ -126,17 +126,17 @@ func objectMethodExtractRegex(objectName string) (*regexp.Regexp, error) {
 }
 
 type method struct {
-	name		string
-	definition	string
-	handler		handler
+	name       string
+	definition string
+	handler    handler
 }
 
 type handler func(in string, param int) string
 
-var methodsRegexToHandler = map[*regexp.Regexp]handler {
+var methodsRegexToHandler = map[*regexp.Regexp]handler{
 	regexp.MustCompile(`(?i)` + methodsRegex["reverse"]): reverseHandler,
-	regexp.MustCompile(`(?i)` + methodsRegex["swap"]): swapHandler,
-	regexp.MustCompile(`(?i)` + methodsRegex["splice"]): spliceHandler,
+	regexp.MustCompile(`(?i)` + methodsRegex["swap"]):    swapHandler,
+	regexp.MustCompile(`(?i)` + methodsRegex["splice"]):  spliceHandler,
 }
 
 func extractMethodMapping(object string, js []byte) (map[string]method, error) {
@@ -161,12 +161,12 @@ func extractMethodMapping(object string, js []byte) (map[string]method, error) {
 
 			definition := definitions[match[0]:match[1]]
 
-			name := definitions[match[0]:match[0]+2]
+			name := definitions[match[0] : match[0]+2]
 
 			methods[name] = method{
-				name: name,
+				name:       name,
 				definition: definition,
-				handler: handler,
+				handler:    handler,
 			}
 		}
 	}
@@ -206,7 +206,7 @@ func swapHandler(sig string, pos int) string {
 
 	temp := runes[0]
 
-	runes[0] = runes[pos % len(runes)]
+	runes[0] = runes[pos%len(runes)]
 
 	runes[pos] = temp
 

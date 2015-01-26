@@ -2,27 +2,27 @@ package info
 
 import (
 	"bytes"
-	"errors"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/url"
-	"strings"
 	"regexp"
+	"strings"
 
 	"github.com/gophergala/aeris/format"
 )
 
 type Info struct {
-	Id						string
-	streams					[]*Stream
-	playerJsUrl				string
-	decryptedSignatures		bool
+	Id                  string
+	streams             []*Stream
+	playerJsUrl         string
+	decryptedSignatures bool
 }
 
 type Stream struct {
-	Url			string
-	signature	string
-	Format		*format.YoutubeFormat
+	Url       string
+	signature string
+	Format    *format.YoutubeFormat
 }
 
 const WATCH_PAGE_URL = "http://www.youtube.com/watch?v="
@@ -31,7 +31,7 @@ var configRegex = regexp.MustCompile(`ytplayer\.config = (.*);ytplayer\.load`)
 
 func NewInfo(id string) *Info {
 	return &Info{
-		Id: id,
+		Id:                  id,
 		decryptedSignatures: false,
 	}
 }
@@ -56,11 +56,11 @@ func (i *Info) Fetch() error {
 		return errors.New("Could not match yt player config in player page")
 	}
 
-	var config = struct{
-		Args struct{
+	var config = struct {
+		Args struct {
 			UrlEncodedFmtStreamMap string `json:"url_encoded_fmt_stream_map"`
 		}
-		Assets struct{
+		Assets struct {
 			Js string
 		}
 	}{}
